@@ -10,6 +10,7 @@ use std::{
     thread::sleep,
     time::{Duration, Instant},
 };
+use std::process::Output;
 
 const ONE_SECOND: Duration = Duration::from_secs(1);
 const ZERO: Duration = Duration::from_secs(0);
@@ -23,6 +24,13 @@ pub struct Cli {
 }
 
 impl Cli {
+
+    pub fn cli_cmd(&self, cmd: &[&str]) -> Output {
+        let mut docker = self.inner.command();
+        docker.args(cmd);
+        docker.output().expect("failed to create docker network")
+    }
+
     pub fn run<I: Image>(&self, image: I) -> Container<'_, I> {
         self.run_with_args(image, RunArgs::default())
     }

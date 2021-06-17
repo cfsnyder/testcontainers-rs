@@ -18,7 +18,7 @@ const ZERO: Duration = Duration::from_secs(0);
 /// Implementation of the Docker client API using the docker cli.
 ///
 /// This (fairly naive) implementation of the Docker client API simply creates `Command`s to the `docker` CLI. It thereby assumes that the `docker` CLI is installed and that it is in the PATH of the current execution environment.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cli {
     inner: Arc<Client>,
 }

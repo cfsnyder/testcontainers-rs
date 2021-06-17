@@ -171,6 +171,12 @@ impl Client {
             command.arg("-P"); // expose all ports
         }
 
+        if let Some(args) = run_args.others() {
+            for arg in args {
+                command.arg(arg);
+            }
+        }
+
         command
             .arg("-d") // Always run detached
             .arg(image.descriptor())

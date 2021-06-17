@@ -1,5 +1,6 @@
-use crate::core::{logs::LogStream, ports::Ports, Port};
 use shiplift::rep::ContainerDetails;
+
+use crate::core::{logs::LogStream, Port, ports::Ports};
 
 /// Container run command arguments.
 /// `name` - run image instance with the given name (should be explicitly set to be seen by other containers created in the same docker network).
@@ -10,6 +11,7 @@ pub struct RunArgs {
     name: Option<String>,
     network: Option<String>,
     ports: Option<Vec<Port>>,
+    other: Option<Vec<String>>,
 }
 
 /// Defines operations that we need to perform on docker containers and other entities.
@@ -48,6 +50,17 @@ impl RunArgs {
         self
     }
 
+    pub fn with(mut self, arg: String) -> Self {
+        self.other = match self.other {
+            None => Some(vec![arg]),
+            Some(mut v) => {
+                v.push(arg);
+                Some(v)
+            }
+        };
+        self
+    }
+
     pub(crate) fn network(&self) -> Option<String> {
         self.network.clone()
     }
@@ -59,4 +72,6 @@ impl RunArgs {
     pub(crate) fn ports(&self) -> Option<Vec<Port>> {
         self.ports.clone()
     }
+
+    pub(crate) fn others(&self) -> Option<Vec<String>> { self.other.clone() }
 }

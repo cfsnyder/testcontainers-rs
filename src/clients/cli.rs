@@ -1,7 +1,3 @@
-use crate::core::{
-    env, env::GetEnvValue, logs::LogStream, ports::Ports, Container, Docker, Image, RunArgs,
-};
-use shiplift::rep::ContainerDetails;
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
@@ -10,7 +6,15 @@ use std::{
     thread::sleep,
     time::{Duration, Instant},
 };
+use std::fmt::{Display, Formatter};
 use std::process::Output;
+use std::str::from_utf8;
+
+use shiplift::rep::ContainerDetails;
+
+use crate::core::{
+    Container, Docker, env, env::GetEnvValue, Image, logs::LogStream, ports::Ports, RunArgs,
+};
 
 const ONE_SECOND: Duration = Duration::from_secs(1);
 const ZERO: Duration = Duration::from_secs(0);
@@ -23,19 +27,29 @@ pub struct Cli {
     inner: Arc<Client>,
 }
 
-impl Cli {
+#[derive(Debug)]
+pub struct FailedToStartError(String);
 
+impl Display for FailedToStartError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Failed to start container: {}", self.0)
+    }
+}
+
+impl std::error::Error for FailedToStartError {}
+
+impl Cli {
     pub fn cli_cmd(&self, cmd: &[&str]) -> Output {
         let mut docker = self.inner.command();
         docker.args(cmd);
         docker.output().expect("failed to create docker network")
     }
 
-    pub fn run<I: Image>(&self, image: I) -> Container<'_, I> {
+    pub fn run<I: Image>(&self, image: I) -> Result<Container<'_, I>, FailedToStartError> {
         self.run_with_args(image, RunArgs::default())
     }
 
-    pub fn run_with_args<I: Image>(&self, image: I, run_args: RunArgs) -> Container<'_, I> {
+    pub fn run_with_args<I: Image>(&self, image: I, run_args: RunArgs) -> Result<Container<'_, I>, FailedToStartError> {
         let mut docker = self.inner.command();
 
         if let Some(network) = run_args.network() {
@@ -54,9 +68,11 @@ impl Cli {
 
         log::debug!("Executing command: {:?}", command);
 
-        let output = command.output().expect("Failed to execute docker command");
+        let output = command.output().map_err(|e| FailedToStartError(e.to_string()))?;
 
-        assert!(output.status.success(), "failed to start container");
+        if !output.status.success() {
+            return Err(FailedToStartError(from_utf8(&output.stderr).expect("Error message was not UTF-8.").to_string()));
+        }
         let container_id = String::from_utf8(output.stdout)
             .expect("output is not valid utf8")
             .trim()
@@ -67,7 +83,7 @@ impl Cli {
             inner: self.inner.clone(),
         };
 
-        Container::new(container_id, client, image, self.inner.command)
+        Ok(Container::new(container_id, client, image, self.inner.command))
     }
 }
 
@@ -209,9 +225,9 @@ impl Client {
     }
 
     fn delete_networks<I, S>(&self, networks: I)
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
+        where
+            I: IntoIterator<Item=S>,
+            S: AsRef<OsStr>,
     {
         let mut docker = self.command();
         docker.args(&["network", "rm"]);
@@ -245,9 +261,9 @@ impl Cli {
     }
 
     fn new<E, S>(binary: S) -> Self
-    where
-        S: Into<OsString>,
-        E: GetEnvValue,
+        where
+            S: Into<OsString>,
+            E: GetEnvValue,
     {
         Self {
             inner: Arc::new(Client {
@@ -397,9 +413,11 @@ impl Drop for Client {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{core::WaitFor, images::generic::GenericImage, Image};
     use spectral::prelude::*;
+
+    use crate::{core::WaitFor, Image, images::generic::GenericImage};
+
+    use super::*;
 
     #[derive(Default)]
     struct HelloWorld {

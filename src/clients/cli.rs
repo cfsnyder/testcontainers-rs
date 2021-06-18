@@ -28,28 +28,32 @@ pub struct Cli {
 }
 
 #[derive(Debug)]
-pub struct FailedToStartError(String);
+pub struct CliError(String);
 
-impl Display for FailedToStartError {
+impl Display for CliError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Failed to start container: {}", self.0)
     }
 }
 
-impl std::error::Error for FailedToStartError {}
+impl std::error::Error for CliError {}
 
 impl Cli {
-    pub fn cli_cmd(&self, cmd: &[&str]) -> Output {
+    pub fn cli_cmd(&self, cmd: &[&str]) -> Result<Output, CliError> {
         let mut docker = self.inner.command();
         docker.args(cmd);
-        docker.output().expect("failed to create docker network")
+        let output = docker.output().map_err(|e| CliError(e.to_string()))?;
+        if !output.status.success() {
+            return Err(CliError(from_utf8(&output.stderr).expect("Error message was not UTF-8.").to_string()));
+        }
+        Ok(output)
     }
 
-    pub fn run<I: Image>(&self, image: I) -> Result<Container<'_, I>, FailedToStartError> {
+    pub fn run<I: Image>(&self, image: I) -> Result<Container<'_, I>, CliError> {
         self.run_with_args(image, RunArgs::default())
     }
 
-    pub fn run_with_args<I: Image>(&self, image: I, run_args: RunArgs) -> Result<Container<'_, I>, FailedToStartError> {
+    pub fn run_with_args<I: Image>(&self, image: I, run_args: RunArgs) -> Result<Container<'_, I>, CliError> {
         let mut docker = self.inner.command();
 
         if let Some(network) = run_args.network() {
@@ -68,10 +72,10 @@ impl Cli {
 
         log::debug!("Executing command: {:?}", command);
 
-        let output = command.output().map_err(|e| FailedToStartError(e.to_string()))?;
+        let output = command.output().map_err(|e| CliError(e.to_string()))?;
 
         if !output.status.success() {
-            return Err(FailedToStartError(from_utf8(&output.stderr).expect("Error message was not UTF-8.").to_string()));
+            return Err(CliError(from_utf8(&output.stderr).expect("Error message was not UTF-8.").to_string()));
         }
         let container_id = String::from_utf8(output.stdout)
             .expect("output is not valid utf8")
